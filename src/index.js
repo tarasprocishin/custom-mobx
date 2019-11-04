@@ -1,72 +1,117 @@
-import React from "react";
+import React, { useState, useRef } from "react";
 import ReactDOM from "react-dom";
 
 import "./styles.css";
 
-const accessedProperties = [];
+let accessedProperties = [];
 const derivationGraph = {};
 
-function observable() {}
+function observable(targetObject) {
+  const ObsorvableObject = {};
 
-function autorun(cb) {}
+  const id = Math.random();
 
-// const store = Observable({
-//   count: 0,
-//   name: 'Unnamed',
+  const getId = key => `Observable(${id}: ${key})`;
 
-//   incremrnt() {
-//     this.count += 1;
-//   },
+  const keys = Object.keys(targetObject);
 
-//   setName() {
-//     this.name = "Test";
-//   },
+  keys.forEach(key => {
+    const id = getId(key);
 
-//   get countPowToSquere() {
-//     return this._count * this._count;
-//   }
-// })
+    ObsorvableObject[key] = targetObject[key];
 
-// class Observable {
-//   constructor(val) {
-//     this._value = val;
+    if (typeof targetObject[key] !== "function") {
+      Object.defineProperty(ObsorvableObject, key, {
+        get() {
+          accessedProperties.push(id);
+          return targetObject[key];
+        },
 
-//     this._listeners = [];
-//   }
+        set(val) {
+          targetObject[key] = val;
 
-//   subscribe(cb) {
-//     this._listeners.push(() => cb(this._value));
-//   }
+          if (derivationGraph[id]) {
+            derivationGraph[id].forEach(cb => cb());
+          }
+        }
+      });
+    }
+  });
+  return ObsorvableObject;
+}
 
-//   next(val) {
-//     this._value = val;
+function createReaction(whatShouldWeRunOnChange) {
+  return {
+    track(functionWhereWeUseObservables) {
+      accessedProperties = [];
+      functionWhereWeUseObservables();
 
-//     this._listeners.forEach(cb => {
-//       cb();
-//     })
-//   }
-// }
+      console.log(derivationGraph);
+      console.log(accessedProperties);
 
-// const custumObsorvebal = new Observable(1);
+      accessedProperties.forEach(id => {
+        derivationGraph[id] = derivationGraph[id] || [];
 
-// custumObsorvebal.subscribe(currVal => {
-//   console.log(currVal)
-// })
+        if (derivationGraph[id].indexOf(whatShouldWeRunOnChange) < 0) {
+          derivationGraph[id].push(whatShouldWeRunOnChange);
+        }
+      });
+    }
+  };
+}
 
-// custumObsorvebal.subscribe(currVal => {
-//   console.log(currVal + 1)
-// })
+function autorun(cb) {
+  const reaction = createReaction(cb);
 
-// custumObsorvebal.next(2)
+  reaction.track(cb);
+}
+
+const store = observable({
+  count: 0,
+
+  increment() {
+    this.count += 1;
+  }
+});
+
+autorun(() => console.log(store.count));
+
+function useForceUpdate() {
+  const [, set] = useState(0);
+
+  return () => set(val => val + 1);
+}
+
+function observer(baseComponent) {
+  const wrapper = () => {
+    const forceUpdate = useForceUpdate();
+    const reaction = useRef(null);
+    if (!reaction.current) {
+      reaction.current = createReaction(forceUpdate);
+    }
+
+    let result;
+
+    reaction.current.track(() => {
+      result = baseComponent();
+    });
+
+    return result;
+  };
+
+  return wrapper;
+}
 
 function App() {
   return (
     <div className="App">
-      <h1>Hello CodeSandbox</h1>
-      <h2>Start editing to see some magic happen!</h2>
+      <h2>Counter {store.count}</h2>
+      <button onClick={() => store.increment()}>Increment</button>
     </div>
   );
 }
 
+const ObserverApp = observer(App);
+
 const rootElement = document.getElementById("root");
-ReactDOM.render(<App />, rootElement);
+ReactDOM.render(<ObserverApp />, rootElement);
